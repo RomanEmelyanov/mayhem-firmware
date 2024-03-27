@@ -87,6 +87,9 @@ class GlassView : public View {
     uint8_t iq_phase_calibration_value{15};  // initial default RX IQ phase calibration value , used for both max2837 & max2839
     int32_t beep_squelch = 20;               // range from -100 to +20, >=20 disabled
     bool beep_enabled = false;               // activate on bip button click
+    uint8_t detection_threshold_power_bandwidth = 1; // FIX
+    uint8_t detection_threshold_power_counter = 0;
+    
     app_settings::SettingsManager settings_{
         "rx_glass"sv,
         app_settings::Mode::RX,
@@ -174,7 +177,8 @@ class GlassView : public View {
         {{0, 0 * 16}, "MIN:     MAX:     LNA   VGA  ", Color::light_grey()},
         {{0, 1 * 16}, "RANGE:       FILTER:     AMP:", Color::light_grey()},
         {{0, 2 * 16}, "PRESET:", Color::light_grey()},
-        {{0, 3 * 16}, "MARKER:          MHz RXIQCAL", Color::light_grey()},
+        // {{0, 3 * 16}, "MARKER:          MHz RXIQCAL", Color::light_grey()}, // FIX
+        {{0, 3 * 16}, "MARKER:          MHz    DBW ", Color::light_grey()},
         //{{0, 4 * 16}, "RES:    STEPS:", Color::light_grey()}};
         {{0, 4 * 16}, "RES:     VOL:", Color::light_grey()}};
 
@@ -207,8 +211,19 @@ class GlassView : public View {
         4,
         {
             {"OFF ", 0},
+            {"1", 42},
+            {"2", 62},
+            {"3", 82},
+            {"4", 102},
+            {"5", 122},
+            {"6", 142},
+            {"7", 162},
+            {"8", 182},
+            {"9", 202},
+            /* FIX
             {"MID ", 118},  // 85 + 25 (110) + a bit more to kill all blue
             {"HIGH", 202},  // 168 + 25 (193)
+            */
         }};
 
     RFAmpField field_rf_amp{

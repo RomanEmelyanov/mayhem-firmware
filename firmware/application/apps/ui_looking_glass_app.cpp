@@ -121,6 +121,11 @@ void GlassView::reset_live_view() {
     max_freq_hold = 0;
     max_freq_power = -1000;
 
+    // FIX
+    freq_stats.set_style(&Styles::white);
+    hackrf::one::led_tx.off();
+    detection_threshold_power_counter = 0;
+    
     // Clear screen in peak mode.
     if (live_frequency_view == 2)
         display.fill_rectangle({{0, 108 + 16}, {SCREEN_W, SCREEN_H - (108 + 16)}}, {0, 0, 0});
@@ -130,7 +135,8 @@ void GlassView::add_spectrum_pixel(uint8_t power) {
     spectrum_row[pixel_index] = spectrum_rgb3_lut[power];                                                                           // row of colors
     spectrum_data[pixel_index] = (live_frequency_integrate * spectrum_data[pixel_index] + power) / (live_frequency_integrate + 1);  // smoothing
     pixel_index++;
-
+    detection_threshold_power_counter = 0; // FIX
+    
     if (pixel_index == SCREEN_W)  // got an entire waterfall line
     {
         if (live_frequency_view > 0) {
@@ -145,6 +151,10 @@ void GlassView::add_spectrum_pixel(uint8_t power) {
 
             // drawing and keeping track of max freq
             for (uint16_t xpos = 0; xpos < SCREEN_W; xpos++) {
+            	// FIX
+                if (spectrum_data[xpos] >= 170) {
+                    detection_threshold_power_counter += 1;
+                } 
                 // save max powerwull freq
                 if (spectrum_data[xpos] > max_freq_power) {
                     max_freq_power = spectrum_data[xpos];
@@ -168,6 +178,21 @@ void GlassView::add_spectrum_pixel(uint8_t power) {
         }
         pixel_index = 0;  // Start New cascade line
     }
+    
+    // FIX
+    if (detection_threshold_power_counter >= 1) {
+        freq_stats.set("DETECTED " + to_string_dec_int(detection_threshold_power_counter) 
+            + "/" + to_string_dec_int(detection_threshold_power_bandwidth) + "       ");
+        freq_stats.set_style(&Styles::white);
+        hackrf::one::led_tx.off();
+    }
+    if (detection_threshold_power_counter >= detection_threshold_power_bandwidth) {
+    	freq_stats.set("### DETECTED!!! ###");
+    	freq_stats.set_style(&Styles::red);
+    	hackrf::one::led_tx.on();
+        baseband::request_audio_beep(5000, 24000, 1000); // freq, sound, ms
+    }
+
 }
 
 bool GlassView::process_bins(uint8_t* powerlevel) {
@@ -201,6 +226,8 @@ void GlassView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
     baseband::spectrum_streaming_stop();
     // Convert bins of this spectrum slice into a representative max_power and when enough, into pixels
     // we actually need SCREEN_W (240) of those bins
+    detection_threshold_power_counter = 0; // FIX2
+    
     for (uint8_t bin = 0; bin < bin_length; bin++) {
         get_max_power(spectrum, bin, max_power);
         if (max_power > range_max_power)
@@ -217,10 +244,11 @@ void GlassView::on_channel_spectrum(const ChannelSpectrum& spectrum) {
         }
         // process actual bin
         if (process_bins(&max_power)) {
+            /* FIX 
             int8_t power = map(range_max_power, 0, 255, -100, 20);
             if (power >= beep_squelch) {
-                baseband::request_audio_beep(map(range_max_power, 0, 256, 400, 2600), 24000, 250);
-            }
+            	baseband::request_audio_beep(map(range_max_power, 0, 256, 400, 2600), 24000, 250);
+            } */
             range_max_power = 0;
             return;  // new line signaled, return
         }
@@ -516,11 +544,17 @@ GlassView::GlassView(
         reset_live_view();
     };
 
-    field_rx_iq_phase_cal.set_range(0, hackrf_r9 ? 63 : 31);                 // max2839 has 6 bits [0..63],  max2837 has 5 bits [0..31]
-    field_rx_iq_phase_cal.set_value(get_spec_iq_phase_calibration_value());  // using  accessor function of AnalogAudioView to read iq_phase_calibration_value from rx_audio.ini
+    // FIX
+    // field_rx_iq_phase_cal.set_range(0, hackrf_r9 ? 63 : 31);                 // max2839 has 6 bits [0..63],  max2837 has 5 bits [0..31]
+    // field_rx_iq_phase_cal.set_value(get_spec_iq_phase_calibration_value());  // using  accessor function of AnalogAudioView to read iq_phase_calibration_value from rx_audio.ini
+    field_rx_iq_phase_cal.set_range(1,99);
+    field_rx_iq_phase_cal.set_value(detection_threshold_power_bandwidth);
     field_rx_iq_phase_cal.on_change = [this](int32_t v) {
-        set_spec_iq_phase_calibration_value(v);  // using  accessor function of AnalogAudioView to write inside SPEC submenu, register value to max283x and save it to rx_audio.ini
+        detection_threshold_power_bandwidth = v;
+        hackrf::one::led_tx.off();
+        // set_spec_iq_phase_calibration_value(v);  // using  accessor function of AnalogAudioView to write inside SPEC submenu, register value to max283x and save it to rx_audio.ini
     };
+    
     set_spec_iq_phase_calibration_value(get_spec_iq_phase_calibration_value());  // initialize iq_phase_calibration in radio
 
     display.scroll_set_area(109, 319);
